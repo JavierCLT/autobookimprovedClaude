@@ -24,6 +24,8 @@ from novel_factory.prompts import (
     continuity_update_user_prompt,
     dialogue_polish_system_prompt,
     dialogue_polish_user_prompt,
+    editorial_blueprint_system_prompt,
+    editorial_blueprint_user_prompt,
     final_polish_system_prompt,
     final_polish_user_prompt,
     initial_continuity_user_prompt,
@@ -52,6 +54,7 @@ from novel_factory.schemas import (
     ContinuityState,
     ContinuityUpdate,
     DialogueAuditReport,
+    EditorialBlueprint,
     Outline,
     PlantPayoffMap,
     ProseRhythmReport,
@@ -301,6 +304,28 @@ class NovelGenerator:
             reasoning_effort=self.config.reasoning.planning,
             temperature=0.1,
             max_output_tokens=3_000,
+        )
+
+    def generate_editorial_blueprint(
+        self,
+        *,
+        story_spec: StorySpec,
+        outline: Outline,
+        scene_cards: Sequence[SceneCard],
+    ) -> EditorialBlueprint:
+        """Generates the editorial blueprint with escalation ladders and chapter missions."""
+        return self.llm.structured(
+            system_prompt=editorial_blueprint_system_prompt(),
+            user_prompt=editorial_blueprint_user_prompt(
+                story_spec_json=serialise_model(story_spec),
+                outline_json=serialise_model(outline),
+                scene_cards_json=serialise_model(list(scene_cards)),
+            ),
+            schema=EditorialBlueprint,
+            task_name="editorial_blueprint",
+            reasoning_effort=self.config.reasoning.planning,
+            temperature=self.config.planning_temperature,
+            max_output_tokens=12_000,
         )
 
     # ══════════════════════════════════════════════════════════════════

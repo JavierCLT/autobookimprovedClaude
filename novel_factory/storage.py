@@ -100,6 +100,10 @@ class RunStorage:
         return self.passes_dir / "anti_ai_report.json"
 
     @property
+    def editorial_blueprint_path(self) -> Path:
+        return self.root / "editorial_blueprint.json"
+
+    @property
     def global_qa_path(self) -> Path:
         return self.qa_dir / "global_qa.json"
 
@@ -117,6 +121,10 @@ class RunStorage:
 
     def chapter_qa_path(self, chapter_number: int) -> Path:
         return self.qa_dir / f"chapter_{format_chapter_number(chapter_number)}_qa.json"
+
+    def arc_qa_path(self, arc_name: str) -> Path:
+        safe_name = arc_name.lower().replace(" ", "_").replace("/", "_")
+        return self.qa_dir / f"arc_qa_{safe_name}.json"
 
     def candidate_path(self, scene_number: int, candidate_index: int) -> Path:
         return self.candidates_dir / f"scene_{format_scene_number(scene_number)}_candidate_{candidate_index}.md"

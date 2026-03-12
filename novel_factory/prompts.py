@@ -222,6 +222,77 @@ Rules:
 
 
 # ---------------------------------------------------------------------------
+# Editorial Blueprint (integrated from autobookimproved)
+# ---------------------------------------------------------------------------
+
+def editorial_blueprint_system_prompt() -> str:
+    return (
+        "You are a developmental editor building an editorial blueprint for a manuscript. "
+        "Your job is to design escalation ladders — concrete, scene-by-scene pressure curves — "
+        "for suspense, relationships, moral pressure, and reveals. "
+        "You also define chapter missions, motif threads, and set-piece requirements. "
+        "Be specific and operational. Every rung, mission, and requirement must be dramatizable."
+    )
+
+
+def editorial_blueprint_user_prompt(
+    *,
+    story_spec_json: str,
+    outline_json: str,
+    scene_cards_json: str,
+) -> str:
+    return f"""Build an editorial blueprint for this manuscript.
+
+Story specification:
+{story_spec_json}
+
+Outline:
+{outline_json}
+
+Scene cards:
+{scene_cards_json}
+
+Create:
+
+1. SUSPENSE LADDER: 8-12 rungs mapping how suspense escalates across scenes.
+   Each rung: scene_number, description of what raises suspense, intensity (1-10).
+   Intensity must generally increase — no plateau longer than 2 rungs.
+
+2. RELATIONSHIP LADDER: 6-10 rungs tracking the key relationship under pressure.
+   Each rung: scene where relationship shifts, what changes, intensity.
+
+3. MORAL PRESSURE LADDER: 6-10 rungs tracking moral compromise/escalation.
+   Each rung: scene where moral line is tested/crossed, intensity.
+
+4. REVEAL LADDER: 5-8 rungs tracking information reveals.
+   Each rung: scene where information is revealed, what's revealed, intensity.
+   Reveals should be spaced to maintain mystery and reward reader patience.
+
+5. VOICE ANCHORS: 3-5 recurring phrases, images, or sensory details that anchor the voice.
+   These should recur naturally throughout the manuscript.
+
+6. MOTIF THREADS: 3-5 thematic motifs to weave through the story.
+   Each should appear at least 3 times, evolving in meaning.
+
+7. SET PIECE REQUIREMENTS: 3-5 must-have dramatic set pieces.
+   These are the scenes readers will remember — high-stakes, high-craft moments.
+
+8. CHAPTER MISSIONS: For EVERY chapter, define:
+   - mission: the ONE thing this chapter must accomplish
+   - must_advance: which ladders must step up in this chapter
+   - emotional_target: how the reader should feel leaving this chapter
+
+9. ENDING PAYOFFS: 4-6 specific things the ending must pay off from earlier setup.
+
+Rules:
+- Every ladder must have clear escalation — no flat zones
+- Chapter missions must cover all chapters in the outline
+- Set pieces should be spread across the story, not clustered
+- At least one ladder must have its peak at the climax
+"""
+
+
+# ---------------------------------------------------------------------------
 # Planning prompts (enhanced from original)
 # ---------------------------------------------------------------------------
 
@@ -352,6 +423,13 @@ Each scene card MUST include:
 - forbidden_entities: characters/objects that MUST NOT appear
 - plants_in_this_scene: foreshadowing elements to embed (from the registry)
 - payoffs_in_this_scene: earlier plants that pay off here
+- scene_desire: what the POV character actively WANTS in this scene (concrete, not abstract)
+- scene_fear: what the POV character DREADS happening (makes them vulnerable)
+- subtext_engine: what is NOT said but drives the tension underneath the surface action
+- cost_paid: what the character loses, sacrifices, or risks by end of scene
+- ending_mode: disaster/dilemma/revelation/quiet_shift/cliffhanger
+- relationship_delta: how a key relationship changes during this scene (be specific)
+- visible_decision: a concrete, on-page choice the character makes (not internal resolution)
 - word_target: 900-2200 words, with variation (not all scenes the same length)
 
 Rules:
@@ -359,6 +437,8 @@ Rules:
 - No scene exists just to convey information — information must come through conflict
 - Scene types must match the outline: don't make an "action" beat into a dialogue scene
 - Word targets should vary: quiet scenes shorter (900-1200), climactic scenes longer (1800-2200)
+- Every scene must have a non-empty scene_desire and cost_paid — scenes without want and loss are dead weight
+- ending_mode must vary across scenes — don't end every scene with a disaster or cliffhanger
 """
 
 
@@ -425,6 +505,23 @@ def scene_draft_user_prompt(
         for payoff in scene_card.payoffs_in_this_scene:
             payoffs_section += f"- {payoff}\n"
 
+    # Build subtext/desire/cost section
+    scene_depth = ""
+    if scene_card.scene_desire:
+        scene_depth += f"\n- Scene desire (what POV wants): {scene_card.scene_desire}"
+    if scene_card.scene_fear:
+        scene_depth += f"\n- Scene fear (what POV dreads): {scene_card.scene_fear}"
+    if scene_card.subtext_engine:
+        scene_depth += f"\n- Subtext engine (unsaid tension): {scene_card.subtext_engine}"
+    if scene_card.cost_paid:
+        scene_depth += f"\n- Cost paid (loss/sacrifice by end): {scene_card.cost_paid}"
+    if scene_card.ending_mode:
+        scene_depth += f"\n- Ending mode: {scene_card.ending_mode}"
+    if scene_card.relationship_delta:
+        scene_depth += f"\n- Relationship delta: {scene_card.relationship_delta}"
+    if scene_card.visible_decision:
+        scene_depth += f"\n- Visible decision: {scene_card.visible_decision}"
+
     return f"""Draft scene {scene_card.scene_number} ({scene_card.scene_type}).
 
 Scene card:
@@ -437,7 +534,7 @@ Scene card:
 - Power shift: {scene_card.power_shift}
 - Emotional arc: {scene_card.emotional_arc}
 - Sensory anchor: {scene_card.sensory_anchor}
-- Counterforce trace: {scene_card.counterforce_trace}
+- Counterforce trace: {scene_card.counterforce_trace}{scene_depth}
 
 Continuity inputs (MUST acknowledge): {', '.join(scene_card.continuity_inputs) or 'none'}
 Continuity outputs (MUST establish): {', '.join(scene_card.continuity_outputs) or 'none'}
@@ -463,7 +560,9 @@ CRITICAL RULES:
 3. Continuity inputs are CONSTRAINTS — reference them naturally, never dump them
 4. Continuity outputs must be ESTABLISHED through drama, not exposition
 5. The closing choice must be a visible decision with consequences
-6. If this is a rewrite, address every issue in the rewrite brief
+6. The cost_paid must be visible by the end — the reader must feel what was lost
+7. The subtext_engine drives what's NOT said — tension lives in omission
+8. If this is a rewrite, address every issue in the rewrite brief
 """
 
 
@@ -807,9 +906,19 @@ Score each dimension 1-5:
 - prose_rhythm_score: Does the prose have varied, musical sentence patterns?
 - originality_score: Does the scene avoid cliche and surprise the reader?
 - ai_smell_score: 5 = reads fully human, 1 = obviously AI-generated
+- specificity_score: Concrete details vs vague abstractions (a character picks up a "chipped blue mug" not just "a cup")
+- prose_freshness_score: Original language vs tired phrases and genre clichés
+- concealment_score: How skillfully is information hidden or revealed? Does the reader learn things at the right pace?
+- leverage_shift_score: Do power dynamics shift during the scene? Who has leverage at the start vs end?
+- relationship_cost_score: Is there emotional price paid in relationships? Does connection cost something?
+- commercial_hook_score: Would a casual reader turn the page? Is the scene commercially compelling?
 
 Set passed=true only if ALL scores >= 3 AND average >= 3.5 AND ai_smell_score >= 3.
-List specific strengths, weaknesses, and concrete rewrite suggestions.
+
+Provide:
+- hard_fail_reasons: List any automatic-fail issues (continuity errors, AI-obvious prose, POV violations)
+- soft_issues: Non-blocking issues worth fixing
+- strengths, weaknesses, rewrite_suggestions: Be concrete and specific
 """
 
 
@@ -919,6 +1028,14 @@ Score 1-5:
 - originality_score: Does the story feel fresh within its genre?
 - ai_smell_score: 5 = reads as a skilled human author, 1 = obviously AI
 - commercial_viability_score: Would a publisher acquire this?
+- hook_strength_score: Does chapter 1 grab the reader within the first page?
+- midpoint_turn_score: Does the midpoint deliver a genuine reversal or escalation?
+- climax_payoff_score: Does the climax pay off the story's promises?
+- ending_payoff_score: Does the resolution satisfy — no loose threads, earned emotion?
+- relationship_progression_score: Do key relationships evolve meaningfully across the full arc?
+- antagonist_pressure_score: Does the antagonist maintain escalating, believable pressure?
+- emotional_aftershock_score: Do emotional beats linger after reading? Is there resonance?
+- boredom_risk_score: 5 = never boring, 1 = multiple dead zones where attention drifts
 
 List:
 - scene_level_issues: specific scenes that need work (with scene numbers)

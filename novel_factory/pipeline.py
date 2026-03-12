@@ -2,19 +2,20 @@
 
 Pipeline:
   1. Voice Calibration (if reference passages provided)
-  2. Planning: StorySpec -> BeatSheet -> Outline -> PlantPayoff -> SubplotWeave -> SceneCards
+  2. Planning: StorySpec -> BeatSheet -> Outline -> PlantPayoff -> SubplotWeave -> SceneCards -> EditorialBlueprint
   3. Character Voice Profiles
   4. Initial Continuity
   5. Plan Validation
   6. Drafting: Best-of-N per scene with adaptive temperature + lookahead
   7. Post-Draft Passes: Transitions, Dialogue, Anti-AI, Prose Rhythm
   8. Assembly
-  9. QA: Chapter, Arc, Global, Cold Reader, Pacing
-  10. Multi-Pass Repair with diminishing returns
-  11. Opening/Closing Premium Rewrites
-  12. Chapter Hook Audit
-  13. Final Polish
-  14. Final Assembly
+  9. Editorial QA: Chapter + Arc QA with intermediate repair rounds
+  10. Global QA: Full-manuscript QA, Cold Reader, Pacing
+  11. Multi-Pass Repair with diminishing returns
+  12. Opening/Closing Premium Rewrites
+  13. Chapter Hook Audit
+  14. Final Polish
+  15. Final Assembly
 """
 
 from __future__ import annotations
@@ -30,10 +31,13 @@ from novel_factory.intake import get_reference_passages
 from novel_factory.judges import ColdReaderJudge, GlobalJudge, PacingAnalyzer, SceneJudge
 from novel_factory.llm import OpenAIResponsesClient
 from novel_factory.schemas import (
+    ArcQaReport,
     BeatSheet,
     BookIntake,
+    ChapterQaReport,
     CharacterVoiceProfile,
     ContinuityState,
+    EditorialBlueprint,
     GlobalQaReport,
     Outline,
     PlantPayoffMap,
@@ -95,7 +99,7 @@ class NovelPipeline:
         voice_dna = self._phase_voice_calibration(book_intake, synopsis)
 
         console.rule("[bold green]PHASE 2: Planning")
-        story_spec, beat_sheet, outline, plant_payoff, subplot_weave, scene_cards, continuity = (
+        story_spec, beat_sheet, outline, plant_payoff, subplot_weave, scene_cards, continuity, editorial_blueprint = (
             self._phase_planning(synopsis, book_intake, voice_dna)
         )
 
@@ -117,22 +121,31 @@ class NovelPipeline:
         console.rule("[bold green]PHASE 7: Assembly")
         manuscript = self._phase_assembly(story_spec, outline, scene_cards)
 
-        console.rule("[bold green]PHASE 8: Quality Assurance")
+        console.rule("[bold green]PHASE 8: Editorial QA (Chapter + Arc)")
+        self._phase_editorial_qa(
+            story_spec, outline, scene_cards, continuity,
+            editorial_blueprint, voice_dna, book_intake,
+        )
+
+        # Reassemble after editorial repairs
+        manuscript = self._phase_assembly(story_spec, outline, scene_cards)
+
+        console.rule("[bold green]PHASE 9: Global Quality Assurance")
         global_qa = self._phase_qa(story_spec, outline, scene_cards, manuscript, book_intake)
 
-        console.rule("[bold green]PHASE 9: Multi-Pass Repair")
+        console.rule("[bold green]PHASE 10: Multi-Pass Repair")
         manuscript = self._phase_repair(
             story_spec, outline, scene_cards, continuity,
             global_qa, voice_dna, book_intake,
         )
 
-        console.rule("[bold green]PHASE 10: Opening/Closing Premium")
+        console.rule("[bold green]PHASE 11: Opening/Closing Premium")
         self._phase_premium_rewrites(story_spec, outline, scene_cards, voice_dna)
 
-        console.rule("[bold green]PHASE 11: Chapter Hook Audit")
+        console.rule("[bold green]PHASE 12: Chapter Hook Audit")
         self._phase_hook_audit(outline, scene_cards)
 
-        console.rule("[bold green]PHASE 12: Final Polish")
+        console.rule("[bold green]PHASE 13: Final Polish")
         manuscript = self._phase_final_polish(story_spec, outline, scene_cards, voice_dna)
 
         console.rule("[bold green]COMPLETE")
@@ -178,8 +191,8 @@ class NovelPipeline:
         synopsis: str,
         book_intake: BookIntake | None,
         voice_dna: VoiceDNA | None,
-    ) -> tuple[StorySpec, BeatSheet | None, Outline, PlantPayoffMap | None, SubplotWeaveMap | None, list[SceneCard], ContinuityState]:
-        """Phase 2: Full planning pipeline with new structural artifacts."""
+    ) -> tuple[StorySpec, BeatSheet | None, Outline, PlantPayoffMap | None, SubplotWeaveMap | None, list[SceneCard], ContinuityState, EditorialBlueprint | None]:
+        """Phase 2: Full planning pipeline with structural artifacts and editorial blueprint."""
 
         # Save synopsis
         self.storage.save_text(self.storage.synopsis_path, synopsis)
@@ -293,7 +306,24 @@ class NovelPipeline:
             self.storage.save_model(self.storage.continuity_path, continuity)
             self.storage.append_log("initial_continuity", "Initial state generated")
 
-        return story_spec, beat_sheet, outline, plant_payoff, subplot_weave, scene_cards, continuity
+        # Editorial Blueprint (NEW — integrated from autobookimproved)
+        editorial_blueprint = None
+        if self.storage.exists(self.storage.editorial_blueprint_path):
+            editorial_blueprint = self.storage.load_model(self.storage.editorial_blueprint_path, EditorialBlueprint)
+            console.print("[dim]Editorial blueprint loaded from checkpoint.[/dim]")
+        else:
+            console.print("Generating editorial blueprint (escalation ladders, chapter missions)...")
+            editorial_blueprint = self.generator.generate_editorial_blueprint(
+                story_spec=story_spec, outline=outline, scene_cards=scene_cards,
+            )
+            self.storage.save_model(self.storage.editorial_blueprint_path, editorial_blueprint)
+            self.storage.append_log(
+                "editorial_blueprint",
+                f"Generated: {len(editorial_blueprint.chapter_missions)} chapter missions, "
+                f"{len(editorial_blueprint.set_piece_requirements)} set pieces",
+            )
+
+        return story_spec, beat_sheet, outline, plant_payoff, subplot_weave, scene_cards, continuity, editorial_blueprint
 
     def _phase_character_voices(
         self,
@@ -571,6 +601,207 @@ class NovelPipeline:
             self.storage.save_model(self.storage.prose_rhythm_path(sc.scene_number), report)
 
         self.storage.append_log("post_draft_passes", "All post-draft passes complete")
+
+    def _phase_editorial_qa(
+        self,
+        story_spec: StorySpec,
+        outline: Outline,
+        scene_cards: list[SceneCard],
+        continuity: ContinuityState,
+        editorial_blueprint: EditorialBlueprint | None,
+        voice_dna: VoiceDNA | None,
+        book_intake: BookIntake | None,
+        max_editorial_rounds: int = 3,
+    ) -> None:
+        """Phase 8: Chapter + Arc editorial QA with intermediate repair rounds.
+
+        Runs chapter-level QA and arc-level QA, then repairs failing scenes
+        before global QA. Up to max_editorial_rounds of repair.
+        """
+        for round_num in range(1, max_editorial_rounds + 1):
+            console.print(f"\n[bold]Editorial QA round {round_num}/{max_editorial_rounds}[/bold]")
+
+            # --- Chapter QA ---
+            chapter_failures: list[tuple[int, ChapterQaReport]] = []
+            for chapter in outline.chapters:
+                ch_num = chapter.chapter_number
+                chapter_text = self.storage.load_text(self.storage.chapter_path(ch_num))
+                ch_cards = [sc for sc in scene_cards if sc.chapter_number == ch_num]
+                ch_qa = self.global_judge.judge_chapter(
+                    story_spec=story_spec, outline=outline,
+                    chapter_number=ch_num, chapter_text=chapter_text,
+                    scene_cards=ch_cards,
+                )
+                self.storage.save_model(self.storage.chapter_qa_path(ch_num), ch_qa)
+
+                # Context-aware thresholds
+                threshold = self._get_chapter_qa_threshold(ch_num, outline, editorial_blueprint)
+                ch_avg = (ch_qa.coherence_score + ch_qa.pacing_score + ch_qa.arc_progression_score +
+                          ch_qa.hook_quality_score + ch_qa.cliffhanger_score + ch_qa.transition_quality_score) / 6
+                passed = ch_avg >= threshold
+                status = "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
+                console.print(
+                    f"  Ch {ch_num}: {status} (avg={ch_avg:.1f}, threshold={threshold:.1f}, "
+                    f"hook={ch_qa.hook_quality_score}, cliff={ch_qa.cliffhanger_score})"
+                )
+                if not passed:
+                    chapter_failures.append((ch_num, ch_qa))
+
+            # --- Arc QA ---
+            arc_specs = self._build_arc_specs(story_spec, outline, scene_cards, editorial_blueprint)
+            arc_failures: list[tuple[str, ArcQaReport]] = []
+            for arc_name, arc_focus, arc_scene_nums in arc_specs:
+                # Gather arc text
+                arc_text_parts = []
+                for sn in arc_scene_nums:
+                    if self.storage.exists(self.storage.scene_path(sn)):
+                        arc_text_parts.append(f"--- Scene {sn} ---\n{self.storage.load_text(self.storage.scene_path(sn))}")
+                arc_text = "\n\n".join(arc_text_parts)
+
+                arc_qa = self.global_judge.judge_arc(
+                    story_spec=story_spec, outline=outline,
+                    arc_name=arc_name, arc_focus=arc_focus,
+                    scene_numbers=arc_scene_nums, arc_text=arc_text,
+                )
+                self.storage.save_model(self.storage.arc_qa_path(arc_name), arc_qa)
+                arc_avg = (arc_qa.arc_coherence_score + arc_qa.escalation_score + arc_qa.payoff_score) / 3
+                status = "[green]PASS[/green]" if arc_avg >= 3.5 else "[red]FAIL[/red]"
+                console.print(f"  Arc '{arc_name}': {status} (avg={arc_avg:.1f})")
+                if arc_avg < 3.5:
+                    arc_failures.append((arc_name, arc_qa))
+
+            # --- Repair if failures ---
+            if not chapter_failures and not arc_failures:
+                console.print("[green]All chapters and arcs pass editorial QA.[/green]")
+                break
+
+            # Collect scenes to repair from chapter failures
+            repair_scenes: set[int] = set()
+            repair_issues: dict[int, list[str]] = {}
+            for ch_num, ch_qa in chapter_failures:
+                ch_cards = [sc for sc in scene_cards if sc.chapter_number == ch_num]
+                for sc in ch_cards:
+                    repair_scenes.add(sc.scene_number)
+                    repair_issues.setdefault(sc.scene_number, []).extend(
+                        f"CHAPTER {ch_num} ISSUE: {issue}" for issue in ch_qa.issues
+                    )
+
+            for arc_name, arc_qa in arc_failures:
+                for issue in arc_qa.issues:
+                    import re
+                    nums = re.findall(r'scene\s*(\d+)', issue, re.IGNORECASE)
+                    for n in nums:
+                        sn = int(n)
+                        repair_scenes.add(sn)
+                        repair_issues.setdefault(sn, []).append(f"ARC '{arc_name}' ISSUE: {issue}")
+
+            console.print(f"Repairing {len(repair_scenes)} scenes from editorial QA feedback...")
+            for sn in sorted(repair_scenes):
+                sc = next((s for s in scene_cards if s.scene_number == sn), None)
+                if not sc:
+                    continue
+                original = self.storage.load_text(self.storage.scene_path(sn))
+                issues = "\n".join(repair_issues.get(sn, ["General improvement needed"]))
+                repaired = self.generator.repair_scene(
+                    story_spec=story_spec, scene_card=sc,
+                    original_text=original, qa_issues=issues,
+                    continuity_state=continuity, voice_dna=voice_dna,
+                )
+                self.storage.save_text(self.storage.scene_path(sn), repaired)
+                self.storage.append_log("editorial_repair", f"Scene {sn} repaired (editorial round {round_num})", scene_number=sn)
+
+            # Reassemble chapters for next round
+            for chapter in outline.chapters:
+                ch_num = chapter.chapter_number
+                ch_title = chapter.chapter_title or f"Chapter {ch_num}"
+                chapter_text = f"\n## {ch_title}\n\n"
+                ch_scene_nums = chapter_scene_numbers(scene_cards, ch_num)
+                for sn in ch_scene_nums:
+                    scene_text = self.storage.load_text(self.storage.scene_path(sn))
+                    chapter_text += scene_text + "\n\n"
+                self.storage.save_text(self.storage.chapter_path(ch_num), chapter_text)
+
+        self.storage.append_log("editorial_qa", f"Completed {round_num} editorial QA rounds")
+
+    def _get_chapter_qa_threshold(
+        self,
+        chapter_number: int,
+        outline: Outline,
+        editorial_blueprint: EditorialBlueprint | None,
+    ) -> float:
+        """Context-aware QA thresholds: anchor scenes get higher bar."""
+        total_chapters = len(outline.chapters)
+        midpoint = total_chapters // 2
+
+        # Opening and closing chapters: highest standard
+        if chapter_number == 1 or chapter_number == total_chapters:
+            return 4.0
+
+        # Midpoint chapter: high standard
+        if chapter_number == midpoint or chapter_number == midpoint + 1:
+            return 3.8
+
+        # If editorial blueprint has set pieces in this chapter, raise the bar
+        if editorial_blueprint:
+            for mission in editorial_blueprint.chapter_missions:
+                if mission.chapter_number == chapter_number and mission.must_advance:
+                    return 3.7
+
+        # Quiet/setup chapters: slightly lower bar
+        return 3.3
+
+    def _build_arc_specs(
+        self,
+        story_spec: StorySpec,
+        outline: Outline,
+        scene_cards: list[SceneCard],
+        editorial_blueprint: EditorialBlueprint | None,
+    ) -> list[tuple[str, str, list[int]]]:
+        """Build dynamic arc specs for editorial QA.
+
+        Returns list of (arc_name, arc_focus, scene_numbers).
+        """
+        total_scenes = len(scene_cards)
+        total_chapters = len(outline.chapters)
+        midpoint_chapter = total_chapters // 2
+
+        arcs: list[tuple[str, str, list[int]]] = []
+
+        # Opening arc: first 2 chapters
+        opening_scenes = [sc.scene_number for sc in scene_cards if sc.chapter_number <= 2]
+        if opening_scenes:
+            arcs.append(("opening", "Hook the reader, establish voice, introduce stakes", opening_scenes))
+
+        # Midpoint arc: chapters around the midpoint
+        mid_scenes = [
+            sc.scene_number for sc in scene_cards
+            if midpoint_chapter - 1 <= sc.chapter_number <= midpoint_chapter + 1
+        ]
+        if mid_scenes:
+            arcs.append(("midpoint", "Deliver reversal/escalation, raise stakes dramatically", mid_scenes))
+
+        # Ending arc: last 2 chapters
+        ending_scenes = [sc.scene_number for sc in scene_cards if sc.chapter_number >= total_chapters - 1]
+        if ending_scenes:
+            arcs.append(("ending", "Pay off promises, deliver climax, resolve satisfyingly", ending_scenes))
+
+        # Counterforce arc: antagonist-heavy scenes
+        counterforce_scenes = [
+            sc.scene_number for sc in scene_cards
+            if sc.counterforce_trace and sc.counterforce_trace.strip()
+        ]
+        if len(counterforce_scenes) >= 3:
+            arcs.append(("counterforce", "Antagonist pressure escalates consistently", counterforce_scenes[:12]))
+
+        # Relationship arc: scenes with relationship deltas
+        relationship_scenes = [
+            sc.scene_number for sc in scene_cards
+            if sc.relationship_delta and sc.relationship_delta.strip()
+        ]
+        if len(relationship_scenes) >= 3:
+            arcs.append(("relationship", "Key relationships evolve meaningfully and with cost", relationship_scenes[:12]))
+
+        return arcs
 
     def _phase_assembly(
         self,

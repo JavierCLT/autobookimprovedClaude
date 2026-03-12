@@ -147,6 +147,45 @@ class SubplotWeaveMap(ArtifactModel):
 
 
 # ---------------------------------------------------------------------------
+# Editorial Blueprint (integrated from autobookimproved)
+# ---------------------------------------------------------------------------
+
+class EscalationRung(ArtifactModel):
+    """A single rung on an escalation ladder."""
+    scene_number: int
+    description: str
+    intensity: int = Field(ge=1, le=10, description="1=calm, 10=maximum pressure")
+
+
+class EscalationLadder(ArtifactModel):
+    """Tracks a narrative pressure that must escalate across the manuscript."""
+    ladder_name: str = Field(description="e.g. 'suspense', 'relationship', 'moral_pressure', 'reveal'")
+    rungs: list[EscalationRung]
+
+
+class ChapterMission(ArtifactModel):
+    """Editorial mandate for a single chapter."""
+    chapter_number: int
+    mission: str = Field(description="The ONE thing this chapter must accomplish")
+    must_advance: list[str] = Field(default_factory=list, description="Which ladders must step up here")
+    emotional_target: str = Field(default="", description="How the reader should feel leaving this chapter")
+
+
+class EditorialBlueprint(ArtifactModel):
+    """High-level editorial strategy for the manuscript — escalation ladders,
+    motif threads, set-piece requirements, and chapter missions."""
+    suspense_ladder: EscalationLadder
+    relationship_ladder: EscalationLadder
+    moral_pressure_ladder: EscalationLadder
+    reveal_ladder: EscalationLadder
+    voice_anchors: list[str] = Field(description="Recurring phrases/images that anchor the voice")
+    motif_threads: list[str] = Field(description="Thematic motifs to weave throughout")
+    set_piece_requirements: list[str] = Field(description="Must-have dramatic set pieces")
+    chapter_missions: list[ChapterMission]
+    ending_payoffs: list[str] = Field(description="What the ending must pay off from setup")
+
+
+# ---------------------------------------------------------------------------
 # Outline & Scene Cards (enhanced)
 # ---------------------------------------------------------------------------
 
@@ -193,6 +232,14 @@ class SceneCard(ArtifactModel):
     forbidden_entities: list[str] = Field(default_factory=list)
     plants_in_this_scene: list[str] = Field(default_factory=list, description="Foreshadowing elements to plant here")
     payoffs_in_this_scene: list[str] = Field(default_factory=list, description="Earlier plants that pay off here")
+    # Richer scene-level fields (integrated from autobookimproved)
+    scene_desire: str = Field(default="", description="What the POV character actively wants in this scene")
+    scene_fear: str = Field(default="", description="What the POV character dreads happening in this scene")
+    subtext_engine: str = Field(default="", description="What is NOT said but drives the tension underneath")
+    cost_paid: str = Field(default="", description="What the character loses, sacrifices, or risks by end of scene")
+    ending_mode: str = Field(default="", description="disaster/dilemma/revelation/quiet_shift/cliffhanger")
+    relationship_delta: str = Field(default="", description="How a key relationship changes during this scene")
+    visible_decision: str = Field(default="", description="A concrete choice the character makes on-page")
     word_target: int = 1500
     notes: str = ""
 
@@ -271,6 +318,15 @@ class SceneQaReport(ArtifactModel):
     prose_rhythm_score: int = Field(default=3, ge=1, le=5)
     originality_score: int = Field(default=3, ge=1, le=5)
     ai_smell_score: int = Field(default=3, ge=1, le=5, description="5=fully human, 1=obviously AI")
+    # Richer QA dimensions (integrated from autobookimproved)
+    specificity_score: int = Field(default=3, ge=1, le=5, description="Concrete details vs vague abstractions")
+    prose_freshness_score: int = Field(default=3, ge=1, le=5, description="Original language vs cliché")
+    concealment_score: int = Field(default=3, ge=1, le=5, description="How well information is hidden/revealed")
+    leverage_shift_score: int = Field(default=3, ge=1, le=5, description="Power dynamics shifting during scene")
+    relationship_cost_score: int = Field(default=3, ge=1, le=5, description="Emotional price paid in relationships")
+    commercial_hook_score: int = Field(default=3, ge=1, le=5, description="Would a reader turn the page")
+    hard_fail_reasons: list[str] = Field(default_factory=list, description="Automatic-fail issues that must be fixed")
+    soft_issues: list[str] = Field(default_factory=list, description="Issues that should be fixed but aren't blocking")
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     rewrite_suggestions: list[str] = Field(default_factory=list)
@@ -314,6 +370,15 @@ class GlobalQaReport(ArtifactModel):
     originality_score: int = Field(default=3, ge=1, le=5)
     ai_smell_score: int = Field(default=3, ge=1, le=5)
     commercial_viability_score: int = Field(default=3, ge=1, le=5)
+    # Structural scoring (integrated from autobookimproved)
+    hook_strength_score: int = Field(default=3, ge=1, le=5, description="Opening chapter hook effectiveness")
+    midpoint_turn_score: int = Field(default=3, ge=1, le=5, description="Midpoint reversal/escalation impact")
+    climax_payoff_score: int = Field(default=3, ge=1, le=5, description="Climax delivers on story promises")
+    ending_payoff_score: int = Field(default=3, ge=1, le=5, description="Resolution satisfies reader")
+    relationship_progression_score: int = Field(default=3, ge=1, le=5, description="Key relationships evolve meaningfully")
+    antagonist_pressure_score: int = Field(default=3, ge=1, le=5, description="Antagonist maintains escalating threat")
+    emotional_aftershock_score: int = Field(default=3, ge=1, le=5, description="Emotional beats linger after reading")
+    boredom_risk_score: int = Field(default=3, ge=1, le=5, description="5=never boring, 1=multiple dead zones")
     scene_level_issues: list[str] = Field(default_factory=list)
     structural_issues: list[str] = Field(default_factory=list)
     strengths: list[str] = Field(default_factory=list)
