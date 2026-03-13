@@ -14,13 +14,13 @@ console = Console()
 def _build_pipeline(project_slug: str):
     """Configures and returns a NovelPipeline instance."""
     from novel_factory.config import configure_logging, load_config
-    from novel_factory.llm import OpenAIResponsesClient
+    from novel_factory.llm import AnthropicClient
     from novel_factory.pipeline import NovelPipeline
     from novel_factory.storage import RunStorage
 
     configure_logging()
     config = load_config()
-    llm = OpenAIResponsesClient(config)
+    llm = AnthropicClient(config)
     storage = RunStorage(config, project_slug)
     return NovelPipeline(config, llm, storage)
 

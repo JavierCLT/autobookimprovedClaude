@@ -9,7 +9,7 @@ from typing import Sequence
 
 from novel_factory.config import AppConfig
 from novel_factory.intake import build_drafting_guidance, build_planning_guidance
-from novel_factory.llm import OpenAIResponsesClient
+from novel_factory.llm import AnthropicClient
 from novel_factory.prompts import (
     anti_ai_system_prompt,
     anti_ai_user_prompt,
@@ -78,7 +78,7 @@ logger = logging.getLogger(__name__)
 class NovelGenerator:
     """Orchestrates all LLM-powered generation steps."""
 
-    def __init__(self, llm: OpenAIResponsesClient, config: AppConfig) -> None:
+    def __init__(self, llm: AnthropicClient, config: AppConfig) -> None:
         self.llm = llm
         self.config = config
 

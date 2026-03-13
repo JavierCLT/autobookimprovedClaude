@@ -12,7 +12,10 @@ from rich.logging import RichHandler
 
 
 class ReasoningProfiles(BaseModel):
-    """Reasoning effort profiles used across the pipeline."""
+    """Reasoning effort profiles used across the pipeline.
+
+    Values: 'high' enables extended thinking, 'medium'/'low' use standard mode.
+    """
 
     planning: str = "high"
     drafting: str = "medium"
@@ -30,7 +33,7 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     api_key: str
-    model: str = "gpt-5.4"
+    model: str = "claude-opus-4-6"
     drafting_model: str = ""  # optional separate model for prose generation
     qa_model: str = ""  # optional separate model for QA/judging
     run_root: Path = Path("runs")
@@ -46,7 +49,7 @@ class AppConfig(BaseModel):
 
     # Context windows
     recent_scene_summaries: int = 5  # increased from 3 for better continuity
-    lookahead_scenes: int = 3  # NEW: how many future scene cards to include
+    lookahead_scenes: int = 3  # how many future scene cards to include
     max_recent_scene_summary_chars: int = 2400  # increased from 1800
     max_synopsis_context_chars: int = 18_000
     max_scene_context_chars: int = 12_000  # increased from 10_000
@@ -58,12 +61,12 @@ class AppConfig(BaseModel):
 
     # Rewrite budgets
     max_scene_rewrites: int = 4  # increased from 2
-    max_repair_cycles: int = 3  # NEW: how many global QA -> repair loops
+    max_repair_cycles: int = 3  # how many global QA -> repair loops
     repair_improvement_threshold: float = 0.02  # stop if improvement < 2%
 
     # Best-of-N drafting
-    best_of_n_candidates: int = 3  # NEW: generate N drafts, pick best
-    best_of_n_enabled: bool = True  # NEW: toggle for cost control
+    best_of_n_candidates: int = 3  # generate N drafts, pick best
+    best_of_n_enabled: bool = True  # toggle for cost control
 
     # Temperature profiles (scene-type adaptive)
     planning_temperature: float = 0.2
@@ -75,11 +78,11 @@ class AppConfig(BaseModel):
     rewriting_temperature: float = 0.7
     qa_temperature: float = 0.1
     global_qa_temperature: float = 0.1
-    polish_temperature: float = 0.6  # NEW: for post-draft passes
+    polish_temperature: float = 0.6  # for post-draft passes
 
     # Premium rewrite budgets
-    opening_chapter_rewrite_budget: int = 6  # NEW: extra rewrites for ch 1
-    closing_chapter_rewrite_budget: int = 5  # NEW: extra rewrites for final ch
+    opening_chapter_rewrite_budget: int = 6  # extra rewrites for ch 1
+    closing_chapter_rewrite_budget: int = 5  # extra rewrites for final ch
 
     # Reasoning profiles
     reasoning: ReasoningProfiles = Field(default_factory=ReasoningProfiles)
@@ -111,15 +114,15 @@ class AppConfig(BaseModel):
 
 def load_config(require_api_key: bool = True) -> AppConfig:
     load_dotenv(override=True)
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if require_api_key and not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set. Add it to your environment or .env.")
+        raise RuntimeError("ANTHROPIC_API_KEY is not set. Add it to your environment or .env.")
 
     return AppConfig(
         api_key=api_key,
-        model=os.getenv("OPENAI_MODEL", "gpt-5.4").strip() or "gpt-5.4",
-        drafting_model=os.getenv("OPENAI_DRAFTING_MODEL", "").strip(),
-        qa_model=os.getenv("OPENAI_QA_MODEL", "").strip(),
+        model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6").strip() or "claude-opus-4-6",
+        drafting_model=os.getenv("ANTHROPIC_DRAFTING_MODEL", "").strip(),
+        qa_model=os.getenv("ANTHROPIC_QA_MODEL", "").strip(),
         run_root=Path(os.getenv("NOVEL_FACTORY_RUN_ROOT", "runs")),
         default_audience=os.getenv("NOVEL_FACTORY_DEFAULT_AUDIENCE", "Adult").strip() or "Adult",
         default_rating_ceiling=os.getenv("NOVEL_FACTORY_DEFAULT_RATING_CEILING", "R").strip() or "R",

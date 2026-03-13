@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from novel_factory.config import AppConfig
 from novel_factory.intake import build_drafting_guidance, build_planning_guidance
-from novel_factory.llm import OpenAIResponsesClient
+from novel_factory.llm import AnthropicClient
 from novel_factory.prompts import (
     arc_qa_system_prompt,
     arc_qa_user_prompt,
@@ -38,7 +38,7 @@ from novel_factory.schemas import (
 class SceneJudge:
     """Runs the scene-level model judge."""
 
-    def __init__(self, llm: OpenAIResponsesClient, config: AppConfig) -> None:
+    def __init__(self, llm: AnthropicClient, config: AppConfig) -> None:
         self.llm = llm
         self.config = config
 
@@ -75,7 +75,7 @@ class SceneJudge:
 class GlobalJudge:
     """Runs global, chapter, and arc-level judges."""
 
-    def __init__(self, llm: OpenAIResponsesClient, config: AppConfig) -> None:
+    def __init__(self, llm: AnthropicClient, config: AppConfig) -> None:
         self.llm = llm
         self.config = config
 
@@ -164,7 +164,7 @@ class GlobalJudge:
 class ColdReaderJudge:
     """Reads the manuscript with ZERO planning context — simulates a real reader. (NEW)"""
 
-    def __init__(self, llm: OpenAIResponsesClient, config: AppConfig) -> None:
+    def __init__(self, llm: AnthropicClient, config: AppConfig) -> None:
         self.llm = llm
         self.config = config
 
@@ -184,7 +184,7 @@ class ColdReaderJudge:
 class PacingAnalyzer:
     """Maps tension curves across the full manuscript. (NEW)"""
 
-    def __init__(self, llm: OpenAIResponsesClient, config: AppConfig) -> None:
+    def __init__(self, llm: AnthropicClient, config: AppConfig) -> None:
         self.llm = llm
         self.config = config
 

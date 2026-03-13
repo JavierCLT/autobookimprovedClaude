@@ -29,7 +29,7 @@ from novel_factory.config import AppConfig
 from novel_factory.generators import NovelGenerator
 from novel_factory.intake import get_reference_passages
 from novel_factory.judges import ColdReaderJudge, GlobalJudge, PacingAnalyzer, SceneJudge
-from novel_factory.llm import OpenAIResponsesClient
+from novel_factory.llm import AnthropicClient
 from novel_factory.schemas import (
     ArcQaReport,
     BeatSheet,
@@ -69,7 +69,7 @@ class NovelPipeline:
     def __init__(
         self,
         config: AppConfig,
-        llm: OpenAIResponsesClient,
+        llm: AnthropicClient,
         storage: RunStorage,
     ) -> None:
         self.config = config
